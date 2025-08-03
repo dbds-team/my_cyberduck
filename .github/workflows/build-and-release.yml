@@ -68,13 +68,32 @@ jobs:
       - name: Find and Display Build Artifacts
         shell: bash
         run: |
-          echo "Looking for build artifacts..."
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Looking for all target directories ==="
+          find . -type d -name "target" | head -20
+          echo "=== Looking for build artifacts ==="
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            find . -name "*.exe" -o -name "*.msi" | head -20
+            echo "=== All EXE files ==="
+            find . -name "*.exe" -ls | head -20
+            echo "=== All MSI files ==="
+            find . -name "*.msi" -ls | head -20
+            echo "=== Check cli/windows/target ==="
+            ls -la cli/windows/target/ || echo "cli/windows/target not found"
+            echo "=== Check windows/target ==="
+            ls -la windows/target/ || echo "windows/target not found"
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
-            find . -name "duck" -type f | head -20
+            echo "=== All duck executables ==="
+            find . -name "duck" -type f -ls | head -20
+            echo "=== Check cli/linux/target ==="
+            ls -la cli/linux/target/ || echo "cli/linux/target not found"
+            echo "=== Check cli/target ==="
+            ls -la cli/target/ || echo "cli/target not found"
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            find . -name "*.app" -o -name "*.dmg" -o -name "*.pkg" -o -name "duck.bundle" | head -20
+            echo "=== All app/dmg/pkg files ==="
+            find . \( -name "*.app" -o -name "*.dmg" -o -name "*.pkg" \) -ls | head -20
+            echo "=== All bundle directories ==="
+            find . -name "*.bundle" -type d -ls | head -20
           fi
           
       - name: Upload Build Artifact - macOS
@@ -83,7 +102,7 @@ jobs:
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: |
-            cli/osx/target/duck.bundle
+            cli/osx/target/duck.bundle/**
             osx/target/*.dmg
             osx/target/*.pkg
           if-no-files-found: warn
@@ -94,7 +113,10 @@ jobs:
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: |
+            cli/target/duck
+            cli/linux/target/duck
             cli/linux/target/release/duck
+            cli/target/*.jar
             cli/linux/target/*.deb
             cli/linux/target/*.rpm
           if-no-files-found: warn
@@ -106,8 +128,11 @@ jobs:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: |
             cli/windows/target/*.exe
+            cli/target/*.exe
             windows/target/*.msi
             windows/target/*.exe
+            cli/target/*.jar
+            cli/windows/target/*.jar
           if-no-files-found: warn
           
   release:
@@ -137,27 +162,75 @@ jobs:
       - name: Package artifacts
         run: |
           mkdir -p release-assets
+          
           # Package macOS
-          if [ -d "./artifacts/macos-arm64-build/cli/osx/target/duck.bundle" ]; then
-            cd ./artifacts/macos-arm64-build/cli/osx/target/
-            zip -r ../../../../../release-assets/duck-macos-arm64.zip duck.bundle
-            cd -
-          fi
-          # Package Linux
-          if [ -f "./artifacts/linux-x64-build/cli/linux/target/release/duck" ]; then
-            cp ./artifacts/linux-x64-build/cli/linux/target/release/duck ./release-assets/duck-linux-x64
-            chmod +x ./release-assets/duck-linux-x64
-          fi
-          # Package Windows
-          for exe in ./artifacts/windows-x64-build/cli/windows/target/*.exe ./artifacts/windows-x64-build/windows/target/*.exe; do
-            if [ -f "$exe" ]; then
-              cp "$exe" ./release-assets/
-              break
+          echo "=== Processing macOS artifacts ==="
+          if [ -d "./artifacts/macos-arm64-build" ]; then
+            # Look for duck.bundle
+            bundle=$(find ./artifacts/macos-arm64-build -name "duck.bundle" -type d | head -1)
+            if [ -n "$bundle" ]; then
+              echo "Found bundle at: $bundle"
+              cd $(dirname "$bundle")
+              zip -r duck-macos-arm64.zip $(basename "$bundle")
+              mv duck-macos-arm64.zip $GITHUB_WORKSPACE/release-assets/
+              cd $GITHUB_WORKSPACE
             fi
-          done
+          fi
+          
+          # Package Linux
+          echo "=== Processing Linux artifacts ==="
+          if [ -d "./artifacts/linux-x64-build" ]; then
+            # Look for duck executable
+            duck=$(find ./artifacts/linux-x64-build -name "duck" -type f -executable | head -1)
+            if [ -n "$duck" ]; then
+              echo "Found duck at: $duck"
+              cp "$duck" ./release-assets/duck-linux-x64
+              chmod +x ./release-assets/duck-linux-x64
+            else
+              # Try to find jar file as fallback
+              jar=$(find ./artifacts/linux-x64-build -name "*.jar" | grep -E "(cli|duck)" | head -1)
+              if [ -n "$jar" ]; then
+                echo "Found jar at: $jar"
+                cp "$jar" ./release-assets/duck-linux-x64.jar
+              fi
+            fi
+          fi
+          
+          # Package Windows
+          echo "=== Processing Windows artifacts ==="
+          if [ -d "./artifacts/windows-x64-build" ]; then
+            # Look for exe files
+            exe=$(find ./artifacts/windows-x64-build -name "*.exe" -size +100k | head -1)
+            if [ -n "$exe" ]; then
+              echo "Found exe at: $exe"
+              cp "$exe" ./release-assets/duck-windows-x64.exe
+            else
+              # If no large exe, look for jar
+              jar=$(find ./artifacts/windows-x64-build -name "*.jar" | grep -E "(cli|duck)" | head -1)
+              if [ -n "$jar" ]; then
+                echo "Found jar at: $jar"
+                cp "$jar" ./release-assets/duck-windows-x64.jar
+              fi
+            fi
+            
+            # Look for MSI installer
+            msi=$(find ./artifacts/windows-x64-build -name "*.msi" | head -1)
+            if [ -n "$msi" ]; then
+              echo "Found msi at: $msi"
+              cp "$msi" ./release-assets/duck-installer-windows-x64.msi
+            fi
+          fi
+          
           # List final assets
           echo "=== Final release assets ==="
           ls -la ./release-assets/
+          
+          # Check if we have any assets
+          if [ -z "$(ls -A ./release-assets)" ]; then
+            echo "WARNING: No release assets found!"
+            echo "Creating placeholder file"
+            echo "Build artifacts not found. Check build logs." > ./release-assets/README.txt
+          fi
           
       - name: Create Release
         uses: softprops/action-gh-release@v1
