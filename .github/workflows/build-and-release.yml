@@ -127,11 +127,8 @@ jobs:
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: |
-            cli/windows/target/*.exe
-            cli/target/*.exe
-            windows/target/*.msi
-            windows/target/*.exe
-            cli/target/*.jar
+            cli/windows/target/Release/*.exe
+            cli/windows/target/Release/*.msi
             cli/windows/target/*.jar
           if-no-files-found: warn
           
@@ -181,16 +178,16 @@ jobs:
           echo "=== Processing Linux artifacts ==="
           if [ -d "./artifacts/linux-x64-build" ]; then
             # Look for duck executable
-            duck=$(find ./artifacts/linux-x64-build -name "duck" -type f -executable | head -1)
+            duck=$(find ./artifacts/linux-x64-build -name "duck" -type f | head -1)
             if [ -n "$duck" ]; then
-              echo "Found duck at: $duck"
+              echo "Found duck at: $duck (size: $(du -h "$duck" | cut -f1))"
               cp "$duck" ./release-assets/duck-linux-x64
               chmod +x ./release-assets/duck-linux-x64
             else
               # Try to find jar file as fallback
               jar=$(find ./artifacts/linux-x64-build -name "*.jar" | grep -E "(cli|duck)" | head -1)
               if [ -n "$jar" ]; then
-                echo "Found jar at: $jar"
+                echo "Found jar at: $jar (size: $(du -h "$jar" | cut -f1))"
                 cp "$jar" ./release-assets/duck-linux-x64.jar
               fi
             fi
@@ -199,24 +196,24 @@ jobs:
           # Package Windows
           echo "=== Processing Windows artifacts ==="
           if [ -d "./artifacts/windows-x64-build" ]; then
-            # Look for exe files
-            exe=$(find ./artifacts/windows-x64-build -name "*.exe" -size +100k | head -1)
+            # Look for exe files in Release folder first (these are the actual builds)
+            exe=$(find ./artifacts/windows-x64-build -path "*/Release/*.exe" -size +10M | head -1)
             if [ -n "$exe" ]; then
-              echo "Found exe at: $exe"
+              echo "Found exe at: $exe (size: $(du -h "$exe" | cut -f1))"
               cp "$exe" ./release-assets/duck-windows-x64.exe
             else
-              # If no large exe, look for jar
-              jar=$(find ./artifacts/windows-x64-build -name "*.jar" | grep -E "(cli|duck)" | head -1)
-              if [ -n "$jar" ]; then
-                echo "Found jar at: $jar"
-                cp "$jar" ./release-assets/duck-windows-x64.jar
+              # Fallback to any large exe
+              exe=$(find ./artifacts/windows-x64-build -name "*.exe" -size +10M | head -1)
+              if [ -n "$exe" ]; then
+                echo "Found exe at: $exe (size: $(du -h "$exe" | cut -f1))"
+                cp "$exe" ./release-assets/duck-windows-x64.exe
               fi
             fi
             
-            # Look for MSI installer
-            msi=$(find ./artifacts/windows-x64-build -name "*.msi" | head -1)
+            # Look for MSI installer in Release folder
+            msi=$(find ./artifacts/windows-x64-build -path "*/Release/*.msi" -size +10M | head -1)
             if [ -n "$msi" ]; then
-              echo "Found msi at: $msi"
+              echo "Found msi at: $msi (size: $(du -h "$msi" | cut -f1))"
               cp "$msi" ./release-assets/duck-installer-windows-x64.msi
             fi
           fi
