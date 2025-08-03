@@ -65,26 +65,50 @@ jobs:
       - name: Build Project
         run: mvn --batch-mode clean package -DskipTests -DskipSign -DskipNotarize
         
-      - name: Find Build Artifacts
-        id: find_artifacts
+      - name: Find and Display Build Artifacts
         shell: bash
         run: |
+          echo "Looking for build artifacts..."
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            echo "artifact_path=$(find . -name "*.exe" -o -name "*.msi" | head -1)" >> $GITHUB_OUTPUT
-            echo "artifact_name=cyberduck-${{ matrix.platform }}-${{ matrix.arch }}.exe" >> $GITHUB_OUTPUT
+            find . -name "*.exe" -o -name "*.msi" | head -20
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
-            echo "artifact_path=$(find . -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" | head -1)" >> $GITHUB_OUTPUT
-            echo "artifact_name=cyberduck-${{ matrix.platform }}-${{ matrix.arch }}.AppImage" >> $GITHUB_OUTPUT
+            find . -name "duck" -type f | head -20
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            echo "artifact_path=$(find . -name "*.dmg" -o -name "*.pkg" | head -1)" >> $GITHUB_OUTPUT
-            echo "artifact_name=cyberduck-${{ matrix.platform }}-${{ matrix.arch }}.dmg" >> $GITHUB_OUTPUT
+            find . -name "*.app" -o -name "*.dmg" -o -name "*.pkg" -o -name "duck.bundle" | head -20
           fi
           
-      - name: Upload Build Artifact
+      - name: Upload Build Artifact - macOS
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
-          path: ${{ steps.find_artifacts.outputs.artifact_path }}
+          path: |
+            cli/osx/target/duck.bundle
+            osx/target/*.dmg
+            osx/target/*.pkg
+          if-no-files-found: warn
+          
+      - name: Upload Build Artifact - Linux
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-${{ matrix.arch }}-build
+          path: |
+            cli/linux/target/release/duck
+            cli/linux/target/*.deb
+            cli/linux/target/*.rpm
+          if-no-files-found: warn
+          
+      - name: Upload Build Artifact - Windows
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-${{ matrix.arch }}-build
+          path: |
+            cli/windows/target/*.exe
+            windows/target/*.msi
+            windows/target/*.exe
+          if-no-files-found: warn
           
   release:
     needs: build
@@ -101,45 +125,48 @@ jobs:
           path: ./artifacts
           
       - name: Display structure of downloaded files
-        run: ls -la ./artifacts/
+        run: |
+          echo "=== All artifacts ==="
+          ls -la ./artifacts/
+          echo "=== Contents of each artifact ==="
+          for dir in ./artifacts/*/; do
+            echo "Contents of $dir:"
+            ls -la "$dir"
+          done
         
+      - name: Package artifacts
+        run: |
+          mkdir -p release-assets
+          # Package macOS
+          if [ -d "./artifacts/macos-arm64-build/cli/osx/target/duck.bundle" ]; then
+            cd ./artifacts/macos-arm64-build/cli/osx/target/
+            zip -r ../../../../../release-assets/duck-macos-arm64.zip duck.bundle
+            cd -
+          fi
+          # Package Linux
+          if [ -f "./artifacts/linux-x64-build/cli/linux/target/release/duck" ]; then
+            cp ./artifacts/linux-x64-build/cli/linux/target/release/duck ./release-assets/duck-linux-x64
+            chmod +x ./release-assets/duck-linux-x64
+          fi
+          # Package Windows
+          for exe in ./artifacts/windows-x64-build/cli/windows/target/*.exe ./artifacts/windows-x64-build/windows/target/*.exe; do
+            if [ -f "$exe" ]; then
+              cp "$exe" ./release-assets/
+              break
+            fi
+          done
+          # List final assets
+          echo "=== Final release assets ==="
+          ls -la ./release-assets/
+          
       - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          release_name: Release ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Release ${{ github.event.inputs.tag_name || github.ref_name }}
           draft: false
           prerelease: false
-          
-      - name: Upload Windows Release Asset
-        uses: actions/upload-release-asset@v1
+          files: |
+            release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/windows-x64-build/*
-          asset_name: cyberduck-windows-x64.exe
-          asset_content_type: application/octet-stream
-          
-      - name: Upload Linux Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/linux-x64-build/*
-          asset_name: cyberduck-linux-x64.AppImage
-          asset_content_type: application/octet-stream
-          
-      - name: Upload macOS Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/macos-arm64-build/*
-          asset_name: cyberduck-macos-arm64.dmg
-          asset_content_type: application/octet-stream
