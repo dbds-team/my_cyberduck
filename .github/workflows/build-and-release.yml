@@ -129,7 +129,9 @@ jobs:
           path: |
             cli/windows/target/Release/*.exe
             cli/windows/target/Release/*.msi
-            cli/windows/target/*.jar
+            windows/target/Cyberduck.exe
+            windows/target/*.msi
+            windows/target/*.dll
           if-no-files-found: warn
           
   release:
@@ -196,17 +198,26 @@ jobs:
           # Package Windows
           echo "=== Processing Windows artifacts ==="
           if [ -d "./artifacts/windows-x64-build" ]; then
-            # Look for exe files in Release folder first (these are the actual builds)
-            exe=$(find ./artifacts/windows-x64-build -path "*/Release/*.exe" -size +10M | head -1)
-            if [ -n "$exe" ]; then
-              echo "Found exe at: $exe (size: $(du -h "$exe" | cut -f1))"
-              cp "$exe" ./release-assets/duck-windows-x64.exe
-            else
-              # Fallback to any large exe
-              exe=$(find ./artifacts/windows-x64-build -name "*.exe" -size +10M | head -1)
-              if [ -n "$exe" ]; then
-                echo "Found exe at: $exe (size: $(du -h "$exe" | cut -f1))"
-                cp "$exe" ./release-assets/duck-windows-x64.exe
+            # Look for CLI exe in Release folder first (these are the actual builds)
+            cli_exe=$(find ./artifacts/windows-x64-build -path "*/Release/*.exe" -size +10M | head -1)
+            if [ -n "$cli_exe" ]; then
+              echo "Found CLI exe at: $cli_exe (size: $(du -h "$cli_exe" | cut -f1))"
+              cp "$cli_exe" ./release-assets/duck-cli-windows-x64.exe
+            fi
+            
+            # Look for GUI exe (Cyberduck.exe)
+            gui_exe=$(find ./artifacts/windows-x64-build -name "Cyberduck.exe" | head -1)
+            if [ -n "$gui_exe" ]; then
+              echo "Found GUI exe at: $gui_exe (size: $(du -h "$gui_exe" | cut -f1))"
+              cp "$gui_exe" ./release-assets/Cyberduck-windows-x64.exe
+              # Also package any DLLs in the same directory
+              gui_dir=$(dirname "$gui_exe")
+              if [ -d "$gui_dir" ]; then
+                echo "Packaging GUI with dependencies..."
+                cd "$gui_dir"
+                zip -r Cyberduck-GUI-windows-x64.zip Cyberduck.exe *.dll 2>/dev/null || true
+                mv Cyberduck-GUI-windows-x64.zip $GITHUB_WORKSPACE/release-assets/ 2>/dev/null || true
+                cd $GITHUB_WORKSPACE
               fi
             fi
             
