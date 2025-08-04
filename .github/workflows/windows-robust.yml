@@ -59,31 +59,32 @@ jobs:
         timeout-minutes: 10
         run: |
           # Create a minimal POM to download core dependencies
-          @'
-          <project>
-            <modelVersion>4.0.0</modelVersion>
-            <groupId>temp</groupId>
-            <artifactId>deps</artifactId>
-            <version>1.0</version>
-            <dependencies>
-              <dependency>
-                <groupId>org.apache.logging.log4j</groupId>
-                <artifactId>log4j-api</artifactId>
-                <version>2.24.2</version>
-              </dependency>
-              <dependency>
-                <groupId>commons-io</groupId>
-                <artifactId>commons-io</artifactId>
-                <version>2.18.0</version>
-              </dependency>
-              <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>3.18.0</version>
-              </dependency>
-            </dependencies>
-          </project>
-          '@ | Out-File -FilePath deps-pom.xml -Encoding UTF8
+          $pom = @"
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>temp</groupId>
+  <artifactId>deps</artifactId>
+  <version>1.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>2.24.2</version>
+    </dependency>
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+      <version>2.18.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>3.18.0</version>
+    </dependency>
+  </dependencies>
+</project>
+"@
+          $pom | Out-File -FilePath deps-pom.xml -Encoding UTF8
           
           # Try to download basic dependencies
           & mvn -f deps-pom.xml dependency:resolve -B -DskipTests || echo "Dependency download completed"
@@ -130,14 +131,15 @@ jobs:
           }
           
           # Create manifest for executable JAR
-          @'
+          $manifest = @"
 Manifest-Version: 1.0
 Main-Class: ch.cyberduck.cli.Terminal
 Class-Path: .
-'@ | Out-File -FilePath ".\dist\MANIFEST.MF" -Encoding ASCII
+"@
+          $manifest | Out-File -FilePath ".\dist\MANIFEST.MF" -Encoding ASCII
           
           # Create Windows launcher
-          @'
+          $launcher = @"
 @echo off
 setlocal enabledelayedexpansion
 
@@ -171,10 +173,11 @@ set CP=%CP:~1%
 REM Run Cyberduck
 echo Starting Cyberduck CLI...
 java -cp "%CP%" ch.cyberduck.cli.Terminal %*
-'@ | Out-File -FilePath ".\dist\duck.bat" -Encoding ASCII
+"@
+          $launcher | Out-File -FilePath ".\dist\duck.bat" -Encoding ASCII
           
           # Create README
-          @'
+          $readme = @"
 # Cyberduck CLI for Windows
 
 This is a Java-based distribution of Cyberduck CLI.
@@ -189,15 +192,16 @@ This is a Java-based distribution of Cyberduck CLI.
 
 ## Usage
 Open Command Prompt and run:
-```
+``````
 duck.bat --help
 duck.bat --list sftp://user@host/
-```
+``````
 
 ## Troubleshooting
 - If you get "Java not found", install Java from https://adoptium.net/
 - If you get class not found errors, ensure all JAR files are in the same directory as duck.bat
-'@ | Out-File -FilePath ".\dist\README.md" -Encoding UTF8
+"@
+          $readme | Out-File -FilePath ".\dist\README.md" -Encoding UTF8
           
           # List distribution contents
           Write-Host "`nDistribution contents:"
