@@ -60,30 +60,30 @@ jobs:
         run: |
           # Create a minimal POM to download core dependencies
           $pom = @"
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>temp</groupId>
-  <artifactId>deps</artifactId>
-  <version>1.0</version>
-  <dependencies>
-    <dependency>
-      <groupId>org.apache.logging.log4j</groupId>
-      <artifactId>log4j-api</artifactId>
-      <version>2.24.2</version>
-    </dependency>
-    <dependency>
-      <groupId>commons-io</groupId>
-      <artifactId>commons-io</artifactId>
-      <version>2.18.0</version>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-lang3</artifactId>
-      <version>3.18.0</version>
-    </dependency>
-  </dependencies>
-</project>
-"@
+          <project>
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>temp</groupId>
+            <artifactId>deps</artifactId>
+            <version>1.0</version>
+            <dependencies>
+              <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-api</artifactId>
+                <version>2.24.2</version>
+              </dependency>
+              <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>2.18.0</version>
+              </dependency>
+              <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.18.0</version>
+              </dependency>
+            </dependencies>
+          </project>
+          "@
           $pom | Out-File -FilePath deps-pom.xml -Encoding UTF8
           
           # Try to download basic dependencies
@@ -132,75 +132,75 @@ jobs:
           
           # Create manifest for executable JAR
           $manifest = @"
-Manifest-Version: 1.0
-Main-Class: ch.cyberduck.cli.Terminal
-Class-Path: .
-"@
+          Manifest-Version: 1.0
+          Main-Class: ch.cyberduck.cli.Terminal
+          Class-Path: .
+          "@
           $manifest | Out-File -FilePath ".\dist\MANIFEST.MF" -Encoding ASCII
           
           # Create Windows launcher
           $launcher = @"
-@echo off
-setlocal enabledelayedexpansion
-
-REM Find Java
-set JAVA_CMD=java
-where java >nul 2>nul
-if %errorlevel% neq 0 (
-    echo Java not found in PATH. Please install Java 11 or later.
-    pause
-    exit /b 1
-)
-
-REM Check Java version
-for /f tokens^=2-5^ delims^=.-_^" %%j in ('java -version 2^>^&1') do (
-    set "JAVA_VER=%%j"
-    goto :version_found
-)
-:version_found
-
-if %JAVA_VER% LSS 11 (
-    echo Java 11 or later required. Found version %JAVA_VER%
-    pause
-    exit /b 1
-)
-
-REM Set classpath
-set CP=
-for %%i in ("%~dp0*.jar") do set CP=!CP!;%%i
-set CP=%CP:~1%
-
-REM Run Cyberduck
-echo Starting Cyberduck CLI...
-java -cp "%CP%" ch.cyberduck.cli.Terminal %*
-"@
+          @echo off
+          setlocal enabledelayedexpansion
+          
+          REM Find Java
+          set JAVA_CMD=java
+          where java >nul 2>nul
+          if %errorlevel% neq 0 (
+              echo Java not found in PATH. Please install Java 11 or later.
+              pause
+              exit /b 1
+          )
+          
+          REM Check Java version
+          for /f tokens^=2-5^ delims^=.-_^" %%j in ('java -version 2^>^&1') do (
+              set "JAVA_VER=%%j"
+              goto :version_found
+          )
+          :version_found
+          
+          if %JAVA_VER% LSS 11 (
+              echo Java 11 or later required. Found version %JAVA_VER%
+              pause
+              exit /b 1
+          )
+          
+          REM Set classpath
+          set CP=
+          for %%i in ("%~dp0*.jar") do set CP=!CP!;%%i
+          set CP=%CP:~1%
+          
+          REM Run Cyberduck
+          echo Starting Cyberduck CLI...
+          java -cp "%CP%" ch.cyberduck.cli.Terminal %*
+          "@
           $launcher | Out-File -FilePath ".\dist\duck.bat" -Encoding ASCII
           
           # Create README
           $readme = @"
-# Cyberduck CLI for Windows
-
-This is a Java-based distribution of Cyberduck CLI.
-
-## Requirements
-- Java 11 or later
-- Windows 7 or later
-
-## Installation
-1. Extract all files to a directory (e.g., C:\cyberduck)
-2. Add the directory to your PATH environment variable (optional)
-
-## Usage
-Open Command Prompt and run:
-``````
-duck.bat --help
-duck.bat --list sftp://user@host/
-``````
-
-## Troubleshooting
-- If you get "Java not found", install Java from https://adoptium.net/
-- If you get class not found errors, ensure all JAR files are in the same directory as duck.bat
-"@
+          # Cyberduck CLI for Windows
+          
+          This is a Java-based distribution of Cyberduck CLI.
+          
+          ## Requirements
+          - Java 11 or later
+          - Windows 7 or later
+          
+          ## Installation
+          1. Extract all files to a directory (e.g., C:\cyberduck)
+          2. Add the directory to your PATH environment variable (optional)
+          
+          ## Usage
+          Open Command Prompt and run:
+          ``````
+          duck.bat --help
+          duck.bat --list sftp://user@host/
+          ``````
+          
+          ## Troubleshooting
+          - If you get "Java not found", install Java from https://adoptium.net/
+          - If you get class not found errors, ensure all JAR files are in the same directory as duck.bat
+          "@
           $readme | Out-File -FilePath ".\dist\README.md" -Encoding UTF8
           
           # List distribution contents
