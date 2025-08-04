@@ -163,6 +163,10 @@ jobs:
             cli/windows/target/*.msi
             cli/windows/target/Release/*.exe
             cli/windows/target/Release/*.msi
+            # Include JAR files as fallback
+            core/target/*.jar
+            cli/target/*.jar
+            binding/target/*.jar
           if-no-files-found: warn
           
   release:
@@ -206,8 +210,32 @@ jobs:
           # Copy Windows artifacts
           if [ -d "./artifacts/windows-x64-build" ]; then
             echo "=== Copying Windows artifacts ==="
-            find ./artifacts/windows-x64-build -name "*.exe" -exec cp {} ./release-assets/ \;
-            find ./artifacts/windows-x64-build -name "*.msi" -exec cp {} ./release-assets/ \;
+            # Try to find exe/msi first
+            exe_count=$(find ./artifacts/windows-x64-build -name "*.exe" | wc -l)
+            msi_count=$(find ./artifacts/windows-x64-build -name "*.msi" | wc -l)
+            
+            if [ $exe_count -gt 0 ] || [ $msi_count -gt 0 ]; then
+              find ./artifacts/windows-x64-build -name "*.exe" -exec cp {} ./release-assets/ \;
+              find ./artifacts/windows-x64-build -name "*.msi" -exec cp {} ./release-assets/ \;
+            else
+              echo "No Windows executables found, packaging JAR files instead"
+              # Create a Windows distribution from JAR files
+              mkdir -p temp-windows
+              find ./artifacts/windows-x64-build -name "*.jar" | grep -v sources | while read jar; do
+                cp "$jar" temp-windows/
+              done
+              
+              if [ "$(ls -A temp-windows)" ]; then
+                # Create launcher script
+                echo '@echo off' > temp-windows/duck.bat
+                echo 'java -jar "%~dp0cli-9.2.0-SNAPSHOT.jar" %*' >> temp-windows/duck.bat
+                
+                # Create zip
+                cd temp-windows
+                zip -r ../release-assets/duck-windows-java.zip *
+                cd ..
+              fi
+            fi
           fi
           
           # List final assets
