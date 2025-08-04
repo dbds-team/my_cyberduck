@@ -132,12 +132,10 @@ jobs:
               done
               
               # Create batch launcher
-              cat > release-artifacts/Cyberduck.bat << 'EOF'
-@echo off
-echo Cyberduck GUI is not available in this build.
-echo This is a CLI-only version. Use duck.bat for command line interface.
-pause
-EOF
+              echo '@echo off' > release-artifacts/Cyberduck.bat
+              echo 'echo Cyberduck GUI is not available in this build.' >> release-artifacts/Cyberduck.bat
+              echo 'echo This is a CLI-only version. Use duck.bat for command line interface.' >> release-artifacts/Cyberduck.bat
+              echo 'pause' >> release-artifacts/Cyberduck.bat
             fi
             
           elif [[ "${{ runner.os }}" == "Linux" ]]; then

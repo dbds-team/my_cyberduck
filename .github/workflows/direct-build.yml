@@ -54,23 +54,17 @@ jobs:
             
             # Create a simple launcher script
             if [[ "${{ runner.os }}" == "Windows" ]]; then
-              cat > output/duck.bat << 'EOF'
-@echo off
-java -jar "%~dp0duck.jar" %*
-EOF
+              echo '@echo off' > output/duck.bat
+              echo 'java -jar "%~dp0duck.jar" %*' >> output/duck.bat
               cp "$cli_jar" output/duck.jar
             elif [[ "${{ runner.os }}" == "Linux" ]]; then
-              cat > output/duck << 'EOF'
-#!/bin/bash
-java -jar "$(dirname "$0")/duck.jar" "$@"
-EOF
+              echo '#!/bin/bash' > output/duck
+              echo 'java -jar "$(dirname "$0")/duck.jar" "$@"' >> output/duck
               chmod +x output/duck
               cp "$cli_jar" output/duck.jar
             elif [[ "${{ runner.os }}" == "macOS" ]]; then
-              cat > output/duck << 'EOF'
-#!/bin/bash
-java -jar "$(dirname "$0")/duck.jar" "$@"
-EOF
+              echo '#!/bin/bash' > output/duck
+              echo 'java -jar "$(dirname "$0")/duck.jar" "$@"' >> output/duck
               chmod +x output/duck
               cp "$cli_jar" output/duck.jar
             fi
