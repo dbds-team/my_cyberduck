@@ -29,18 +29,18 @@ jobs:
             platform: macos
             arch: arm64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           
-      - name: Set up JDK 21
+      - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: 21
+          java-version: 11
           cache: maven
           
       - name: Setup Windows Build Environment
@@ -48,7 +48,6 @@ jobs:
         run: |
           choco install wixtoolset -y
           choco install bonjour -y
-          choco install openssl -y
           
       - uses: microsoft/setup-msbuild@v2
         if: runner.os == 'Windows'
@@ -63,46 +62,28 @@ jobs:
           echo "NuGetPackageSourceCredentials_gh-ikvmnet=${{ env.NugetCredentials }}" >> $env:GITHUB_ENV
           echo "NuGetPackageSourceCredentials_gh-iterate-ch=${{ env.NugetCredentials }}" >> $env:GITHUB_ENV
           
-      - name: Build All Platforms
+      - name: Build and Package - All Platforms
         run: |
-          # Use standard Maven build which handles all platforms
-          mvn --batch-mode clean package -DskipTests -DskipSign -DskipNotarize
+          # Build with installer profile to create GUI applications
+          mvn verify -DskipTests -DskipSign -Pinstaller
           
-      - name: Build Windows Installer
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          # Windows GUI needs proper packaging with dependencies
-          cd windows
-          # Build the full installer package which includes all dependencies
-          mvn --batch-mode package -DskipTests -DskipSign || echo "Windows installer build failed"
-        
-      - name: Find and Display Build Artifacts
+      - name: Find Build Artifacts
         shell: bash
         run: |
-          echo "=== Current directory ==="
-          pwd
-          echo "=== Looking for all target directories ==="
-          find . -type d -name "target" | head -20
-          echo "=== Looking for build artifacts ==="
+          echo "=== Finding release artifacts ==="
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            echo "=== Windows build artifacts ==="
-            find . -name "*.exe" -size +1M -ls | head -20
-            find . -name "*.msi" -ls | head -20
-            ls -la cli/windows/target/Release/ 2>/dev/null || echo "No CLI Release build"
-            ls -la windows/target/ 2>/dev/null || echo "No GUI build"
+            echo "=== Windows release artifacts ==="
+            ls -la windows/target/release/ || echo "No Windows release directory"
+            find windows/target -name "*.exe" -o -name "*.msi" | grep -E "(release|setup)" || true
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
-            echo "=== Linux build artifacts ==="
-            find . -name "duck" -type f -ls | head -20
-            find . -name "*.jar" -size +10M -ls | head -10
-            ls -la cli/target/ 2>/dev/null || echo "No CLI target"
+            echo "=== Linux release artifacts ==="
+            ls -la cli/linux/target/release/ || echo "No Linux release directory"
+            find cli/linux/target -name "*.deb" -o -name "*.rpm" || true
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            echo "=== macOS build artifacts ==="
-            find . -name "*.app" -o -name "*.dmg" -o -name "*.pkg" | head -20
-            find . -name "duck.bundle" -type d | head -10
-            ls -la osx/target/ 2>/dev/null || echo "No OSX target"
-            ls -la cli/osx/target/ 2>/dev/null || echo "No CLI OSX target"
+            echo "=== macOS release artifacts ==="
+            ls -la osx/target/release/ || echo "No macOS release directory"
+            ls -la cli/osx/target/release/ || echo "No CLI macOS release directory"
+            find osx/target -name "*.dmg" -o -name "*.pkg" -o -name "*.zip" || true
           fi
           
       - name: Upload Build Artifact - macOS
@@ -111,10 +92,11 @@ jobs:
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: |
-            osx/target/*.dmg
-            osx/target/*.pkg
-            cli/osx/target/duck.bundle/**
-            cli/osx/target/*.zip
+            osx/target/release/*.zip
+            osx/target/release/*.pkg
+            osx/target/release/*.dmg
+            cli/osx/target/release/*.pkg
+            cli/osx/target/release/*.tar.gz
           if-no-files-found: warn
           
       - name: Upload Build Artifact - Linux
@@ -123,10 +105,8 @@ jobs:
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: |
-            cli/target/duck
-            cli/linux/target/duck
-            cli/target/*.jar
-            **/target/*.jar
+            cli/linux/target/release/*.deb
+            cli/linux/target/release/*.rpm
           if-no-files-found: warn
           
       - name: Upload Build Artifact - Windows
@@ -135,10 +115,10 @@ jobs:
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: |
-            cli/windows/target/Release/*.exe
-            cli/windows/target/Release/*.msi
-            windows/target/Cyberduck.exe
-            windows/target/*.dll
+            windows/target/release/*.exe
+            windows/target/release/*.msi
+            cli/windows/target/release/*.exe
+            cli/windows/target/release/*.msi
           if-no-files-found: warn
           
   release:
@@ -155,134 +135,78 @@ jobs:
         with:
           path: ./artifacts
           
-      - name: Display structure of downloaded files
+      - name: Display artifacts
         run: |
-          echo "=== All artifacts ==="
-          ls -la ./artifacts/
-          echo "=== Contents of each artifact ==="
-          for dir in ./artifacts/*/; do
-            echo "Contents of $dir:"
-            ls -la "$dir"
-          done
-        
+          echo "=== All downloaded artifacts ==="
+          find ./artifacts -type f -ls
+          
       - name: Package artifacts
         run: |
           mkdir -p release-assets
           
-          # Package macOS
-          echo "=== Processing macOS artifacts ==="
+          # Copy macOS artifacts
           if [ -d "./artifacts/macos-arm64-build" ]; then
-            # Look for duck.bundle
-            bundle=$(find ./artifacts/macos-arm64-build -name "duck.bundle" -type d | head -1)
-            if [ -n "$bundle" ]; then
-              echo "Found bundle at: $bundle"
-              cd $(dirname "$bundle")
-              zip -r Cyberduck-macos-arm64.zip $(basename "$bundle")
-              mv Cyberduck-macos-arm64.zip $GITHUB_WORKSPACE/release-assets/
-              cd $GITHUB_WORKSPACE
-            fi
-            # Look for DMG/PKG if exists
-            dmg=$(find ./artifacts/macos-arm64-build -name "*.dmg" | head -1)
-            if [ -n "$dmg" ]; then
-              echo "Found DMG at: $dmg (size: $(du -h "$dmg" | cut -f1))"
-              cp "$dmg" ./release-assets/Cyberduck-macos-arm64.dmg
-            fi
+            echo "=== Copying macOS artifacts ==="
+            find ./artifacts/macos-arm64-build -name "*.dmg" -exec cp {} ./release-assets/ \;
+            find ./artifacts/macos-arm64-build -name "*.pkg" -exec cp {} ./release-assets/ \;
+            find ./artifacts/macos-arm64-build -name "*.zip" -exec cp {} ./release-assets/ \;
           fi
           
-          # Package Linux
-          echo "=== Processing Linux artifacts ==="
+          # Copy Linux artifacts
           if [ -d "./artifacts/linux-x64-build" ]; then
-            # Look for duck executable
-            duck=$(find ./artifacts/linux-x64-build -name "duck" -type f | head -1)
-            if [ -n "$duck" ]; then
-              echo "Found duck at: $duck (size: $(du -h "$duck" | cut -f1))"
-              # Create a simple launcher script for GUI
-              echo '#!/bin/bash' > ./release-assets/Cyberduck-linux-x64.sh
-              echo '# Cyberduck GUI launcher for Linux' >> ./release-assets/Cyberduck-linux-x64.sh
-              echo 'java -jar "$(dirname "$0")/Cyberduck-linux-x64.jar" "$@"' >> ./release-assets/Cyberduck-linux-x64.sh
-              chmod +x ./release-assets/Cyberduck-linux-x64.sh
-            fi
-            # Look for main JAR file
-            jar=$(find ./artifacts/linux-x64-build -name "*.jar" -size +10M | grep -v test | head -1)
-            if [ -n "$jar" ]; then
-              echo "Found JAR at: $jar (size: $(du -h "$jar" | cut -f1))"
-              cp "$jar" ./release-assets/Cyberduck-linux-x64.jar
-            fi
+            echo "=== Copying Linux artifacts ==="
+            find ./artifacts/linux-x64-build -name "*.deb" -exec cp {} ./release-assets/ \;
+            find ./artifacts/linux-x64-build -name "*.rpm" -exec cp {} ./release-assets/ \;
           fi
           
-          # Package Windows
-          echo "=== Processing Windows artifacts ==="
+          # Copy Windows artifacts
           if [ -d "./artifacts/windows-x64-build" ]; then
-            # Priority 1: Look for MSI installer (complete package)
-            msi=$(find ./artifacts/windows-x64-build -name "*.msi" -size +10M | head -1)
-            if [ -n "$msi" ]; then
-              echo "Found MSI installer at: $msi (size: $(du -h "$msi" | cut -f1))"
-              cp "$msi" ./release-assets/Cyberduck-Installer-windows-x64.msi
-            fi
-            
-            # Priority 2: Look for setup exe (alternative installer)
-            setup=$(find ./artifacts/windows-x64-build -name "*etup*.exe" -o -name "*nstaller*.exe" | grep -v ".msi" | head -1)
-            if [ -n "$setup" ]; then
-              echo "Found setup exe at: $setup (size: $(du -h "$setup" | cut -f1))"
-              cp "$setup" ./release-assets/Cyberduck-Setup-windows-x64.exe
-            fi
-            
-            # Priority 3: CLI executable from Release folder
-            cli_exe=$(find ./artifacts/windows-x64-build -path "*/Release/*.exe" -size +10M | grep -v -E "(Setup|Installer)" | head -1)
-            if [ -n "$cli_exe" ]; then
-              echo "Found CLI exe at: $cli_exe (size: $(du -h "$cli_exe" | cut -f1))"
-              cp "$cli_exe" ./release-assets/duck-cli-windows-x64.exe
-            fi
-            
-            # Note about GUI
-            echo "Note: Windows GUI requires .NET Framework 4.7.2 and should be installed via MSI installer"
+            echo "=== Copying Windows artifacts ==="
+            find ./artifacts/windows-x64-build -name "*.exe" -exec cp {} ./release-assets/ \;
+            find ./artifacts/windows-x64-build -name "*.msi" -exec cp {} ./release-assets/ \;
           fi
           
           # List final assets
           echo "=== Final release assets ==="
           ls -la ./release-assets/
           
-          # Create README for the release
-          {
-            echo "# Cyberduck Release"
-            echo ""
-            echo "## Windows"
-            echo "- **Cyberduck-Installer-windows-x64.msi** - Full installer with GUI (recommended)"
-            echo "- **duck-cli-windows-x64.exe** - Command-line version (60MB standalone)"
-            echo ""
-            echo "### Windows Requirements:"
-            echo "- .NET Framework 4.7.2 or later"
-            echo "- Windows 7 SP1 or later"
-            echo ""
-            echo "## macOS"
-            echo "- **Cyberduck-macos-arm64.zip** - macOS application bundle for M1/M2/M3/M4 chips"
-            echo "- **Cyberduck-macos-arm64.dmg** - Disk image installer (if available)"
-            echo ""
-            echo "## Linux"
-            echo "- **Cyberduck-linux-x64.jar** - Java-based GUI application"
-            echo "- **Cyberduck-linux-x64.sh** - Launcher script"
-            echo ""
-            echo "### Linux Requirements:"
-            echo "- Java 11 or later"
-            echo "- Run with: \`./Cyberduck-linux-x64.sh\` or \`java -jar Cyberduck-linux-x64.jar\`"
-            echo ""
-            echo "## Notes"
-            echo "- Windows GUI requires the MSI installer for proper dependency installation"
-            echo "- Linux version runs as a Java application"
-            echo "- macOS version is optimized for Apple Silicon (M-series chips)"
-          } > ./release-assets/README.md
-          
-          # Check if we have any assets
-          if [ -z "$(ls -A ./release-assets | grep -v README)" ]; then
-            echo "WARNING: No release artifacts found!"
-            echo "Build artifacts not found. Check build logs." >> ./release-assets/README.md
-          fi
-          
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          name: Release ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Cyberduck ${{ github.event.inputs.tag_name || github.ref_name }}
+          body: |
+            # Cyberduck Release
+            
+            ## GUI Applications
+            
+            ### Windows
+            - `Cyberduck-*.exe` - Windows installer
+            - `Cyberduck-*.msi` - Windows MSI installer
+            
+            ### macOS
+            - `Cyberduck-*.dmg` - macOS disk image
+            - `Cyberduck-*.pkg` - macOS installer package
+            - `Cyberduck-*.zip` - macOS application bundle
+            
+            ## Command Line Interface (CLI)
+            
+            ### Windows
+            - `duck-*.exe` - Windows CLI installer
+            - `duck-*.msi` - Windows CLI MSI
+            
+            ### macOS
+            - `duck-*.pkg` - macOS CLI installer
+            - `duck-*.tar.gz` - macOS CLI archive
+            
+            ### Linux
+            - `duck-*.deb` - Debian/Ubuntu package
+            - `duck-*.rpm` - RedHat/Fedora package
+            
+            ## System Requirements
+            - Java 11 or later
+            - Windows: .NET Framework 4.7.2+
+            - macOS: macOS 10.12+
           draft: false
           prerelease: false
           files: |
