@@ -243,34 +243,34 @@ jobs:
           ls -la ./release-assets/
           
           # Create README for the release
-          cat > ./release-assets/README.md << 'READMEEOF'
-# Cyberduck Release
-
-## Windows
-- **Cyberduck-Installer-windows-x64.msi** - Full installer with GUI (recommended)
-- **duck-cli-windows-x64.exe** - Command-line version (60MB standalone)
-
-### Windows Requirements:
-- .NET Framework 4.7.2 or later
-- Windows 7 SP1 or later
-
-## macOS
-- **Cyberduck-macos-arm64.zip** - macOS application bundle for M1/M2/M3/M4 chips
-- **Cyberduck-macos-arm64.dmg** - Disk image installer (if available)
-
-## Linux
-- **Cyberduck-linux-x64.jar** - Java-based GUI application
-- **Cyberduck-linux-x64.sh** - Launcher script
-
-### Linux Requirements:
-- Java 11 or later
-- Run with: `./Cyberduck-linux-x64.sh` or `java -jar Cyberduck-linux-x64.jar`
-
-## Notes
-- Windows GUI requires the MSI installer for proper dependency installation
-- Linux version runs as a Java application
-- macOS version is optimized for Apple Silicon (M-series chips)
-READMEEOF
+          {
+            echo "# Cyberduck Release"
+            echo ""
+            echo "## Windows"
+            echo "- **Cyberduck-Installer-windows-x64.msi** - Full installer with GUI (recommended)"
+            echo "- **duck-cli-windows-x64.exe** - Command-line version (60MB standalone)"
+            echo ""
+            echo "### Windows Requirements:"
+            echo "- .NET Framework 4.7.2 or later"
+            echo "- Windows 7 SP1 or later"
+            echo ""
+            echo "## macOS"
+            echo "- **Cyberduck-macos-arm64.zip** - macOS application bundle for M1/M2/M3/M4 chips"
+            echo "- **Cyberduck-macos-arm64.dmg** - Disk image installer (if available)"
+            echo ""
+            echo "## Linux"
+            echo "- **Cyberduck-linux-x64.jar** - Java-based GUI application"
+            echo "- **Cyberduck-linux-x64.sh** - Launcher script"
+            echo ""
+            echo "### Linux Requirements:"
+            echo "- Java 11 or later"
+            echo "- Run with: \`./Cyberduck-linux-x64.sh\` or \`java -jar Cyberduck-linux-x64.jar\`"
+            echo ""
+            echo "## Notes"
+            echo "- Windows GUI requires the MSI installer for proper dependency installation"
+            echo "- Linux version runs as a Java application"
+            echo "- macOS version is optimized for Apple Silicon (M-series chips)"
+          } > ./release-assets/README.md
           
           # Check if we have any assets
           if [ -z "$(ls -A ./release-assets | grep -v README)" ]; then
