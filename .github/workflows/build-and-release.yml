@@ -29,6 +29,7 @@ jobs:
             platform: macos
             arch: arm64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     
     steps:
       - uses: actions/checkout@v4
@@ -67,14 +68,15 @@ jobs:
           # Use standard Maven build which handles all platforms
           mvn --batch-mode clean package -DskipTests -DskipSign -DskipNotarize
           
-      - name: Additional Windows GUI Build
+      - name: Build Windows Installer
         if: runner.os == 'Windows'
         continue-on-error: true
         shell: pwsh
         run: |
+          # Windows GUI needs proper packaging with dependencies
           cd windows
-          # Try to build Windows GUI, but don't fail if it doesn't work
-          msbuild src\main\csharp\Cyberduck.csproj /t:Build /p:Configuration=Release /p:Platform=x64 || echo "GUI build failed, continuing with Maven artifacts"
+          # Build the full installer package which includes all dependencies
+          mvn --batch-mode package -DskipTests -DskipSign || echo "Windows installer build failed"
         
       - name: Find and Display Build Artifacts
         shell: bash
@@ -211,43 +213,69 @@ jobs:
           # Package Windows
           echo "=== Processing Windows artifacts ==="
           if [ -d "./artifacts/windows-x64-build" ]; then
-            # Look for large exe files in Release folder (the actual builds)
-            exe=$(find ./artifacts/windows-x64-build -path "*/Release/*.exe" -size +10M | head -1)
-            if [ -n "$exe" ]; then
-              echo "Found exe at: $exe (size: $(du -h "$exe" | cut -f1))"
-              cp "$exe" ./release-assets/Cyberduck-windows-x64.exe
-            fi
-            
-            # Look for MSI installer
-            msi=$(find ./artifacts/windows-x64-build -path "*/Release/*.msi" -size +10M | head -1)
+            # Priority 1: Look for MSI installer (complete package)
+            msi=$(find ./artifacts/windows-x64-build -name "*.msi" -size +10M | head -1)
             if [ -n "$msi" ]; then
-              echo "Found msi at: $msi (size: $(du -h "$msi" | cut -f1))"
+              echo "Found MSI installer at: $msi (size: $(du -h "$msi" | cut -f1))"
               cp "$msi" ./release-assets/Cyberduck-Installer-windows-x64.msi
             fi
             
-            # If GUI exists, package it
-            gui_exe=$(find ./artifacts/windows-x64-build -name "Cyberduck.exe" | head -1)
-            if [ -n "$gui_exe" ] && [ -f "$gui_exe" ]; then
-              echo "Found GUI exe at: $gui_exe (size: $(du -h "$gui_exe" | cut -f1))"
-              gui_dir=$(dirname "$gui_exe")
-              if [ -d "$gui_dir" ]; then
-                cd "$gui_dir"
-                zip -r Cyberduck-GUI-windows-x64.zip Cyberduck.exe *.dll 2>/dev/null || zip -r Cyberduck-GUI-windows-x64.zip Cyberduck.exe
-                mv Cyberduck-GUI-windows-x64.zip $GITHUB_WORKSPACE/release-assets/ 2>/dev/null || true
-                cd $GITHUB_WORKSPACE
-              fi
+            # Priority 2: Look for setup exe (alternative installer)
+            setup=$(find ./artifacts/windows-x64-build -name "*etup*.exe" -o -name "*nstaller*.exe" | grep -v ".msi" | head -1)
+            if [ -n "$setup" ]; then
+              echo "Found setup exe at: $setup (size: $(du -h "$setup" | cut -f1))"
+              cp "$setup" ./release-assets/Cyberduck-Setup-windows-x64.exe
             fi
+            
+            # Priority 3: CLI executable from Release folder
+            cli_exe=$(find ./artifacts/windows-x64-build -path "*/Release/*.exe" -size +10M | grep -v -E "(Setup|Installer)" | head -1)
+            if [ -n "$cli_exe" ]; then
+              echo "Found CLI exe at: $cli_exe (size: $(du -h "$cli_exe" | cut -f1))"
+              cp "$cli_exe" ./release-assets/duck-cli-windows-x64.exe
+            fi
+            
+            # Note about GUI
+            echo "Note: Windows GUI requires .NET Framework 4.7.2 and should be installed via MSI installer"
           fi
           
           # List final assets
           echo "=== Final release assets ==="
           ls -la ./release-assets/
           
+          # Create README for the release
+          cat > ./release-assets/README.md << 'READMEEOF'
+# Cyberduck Release
+
+## Windows
+- **Cyberduck-Installer-windows-x64.msi** - Full installer with GUI (recommended)
+- **duck-cli-windows-x64.exe** - Command-line version (60MB standalone)
+
+### Windows Requirements:
+- .NET Framework 4.7.2 or later
+- Windows 7 SP1 or later
+
+## macOS
+- **Cyberduck-macos-arm64.zip** - macOS application bundle for M1/M2/M3/M4 chips
+- **Cyberduck-macos-arm64.dmg** - Disk image installer (if available)
+
+## Linux
+- **Cyberduck-linux-x64.jar** - Java-based GUI application
+- **Cyberduck-linux-x64.sh** - Launcher script
+
+### Linux Requirements:
+- Java 11 or later
+- Run with: `./Cyberduck-linux-x64.sh` or `java -jar Cyberduck-linux-x64.jar`
+
+## Notes
+- Windows GUI requires the MSI installer for proper dependency installation
+- Linux version runs as a Java application
+- macOS version is optimized for Apple Silicon (M-series chips)
+READMEEOF
+          
           # Check if we have any assets
-          if [ -z "$(ls -A ./release-assets)" ]; then
-            echo "WARNING: No release assets found!"
-            echo "Creating placeholder file"
-            echo "Build artifacts not found. Check build logs." > ./release-assets/README.txt
+          if [ -z "$(ls -A ./release-assets | grep -v README)" ]; then
+            echo "WARNING: No release artifacts found!"
+            echo "Build artifacts not found. Check build logs." >> ./release-assets/README.md
           fi
           
       - name: Create Release
