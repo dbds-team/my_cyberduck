@@ -1,0 +1,185 @@
+name: Simple Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for release'
+        required: true
+        default: 'v0.0.1'
+
+jobs:
+  build:
+    permissions:
+      contents: write
+      packages: read
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+          cache: maven
+          
+      - name: Setup Windows Build Environment
+        if: runner.os == 'Windows'
+        run: |
+          choco install wixtoolset -y --no-progress
+          choco install bonjour -y --no-progress
+          
+      - uses: microsoft/setup-msbuild@v2
+        if: runner.os == 'Windows'
+        with:
+          msbuild-architecture: x64
+          
+      - name: Configure NuGet
+        if: runner.os == 'Windows'
+        env:
+          NugetCredentials: "Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}"
+        run: |
+          echo "NuGetPackageSourceCredentials_gh-ikvmnet=${{ env.NugetCredentials }}" >> $env:GITHUB_ENV
+          echo "NuGetPackageSourceCredentials_gh-iterate-ch=${{ env.NugetCredentials }}" >> $env:GITHUB_ENV
+          
+      - name: Build CLI Only
+        run: |
+          mvn clean package -B -DskipTests -DskipSign -DskipNotarize -pl :cli -am
+          
+      - name: Build Platform Specific
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            mvn package -B -DskipTests -pl :cli-windows -am || true
+          elif [[ "${{ runner.os }}" == "Linux" ]]; then
+            mvn package -B -DskipTests -pl :cli-linux -am || true
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            mvn package -B -DskipTests -pl :cli-osx,:osx -am || true
+          fi
+          
+      - name: List Build Results
+        shell: bash
+        run: |
+          echo "=== JAR files ==="
+          find . -name "*.jar" -size +1M | grep -v test | head -20
+          echo "=== Executables ==="
+          find . -name "*.exe" -o -name "duck" -type f | grep -v test | head -20
+          echo "=== Packages ==="
+          find . -name "*.msi" -o -name "*.dmg" -o -name "*.pkg" -o -name "*.deb" -o -name "*.rpm" | head -20
+          
+      - name: Create Release Package
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            # Find the largest exe file (likely the CLI with dependencies)
+            exe=$(find . -name "*.exe" -size +10M | head -1)
+            if [ -n "$exe" ]; then
+              cp "$exe" release-artifacts/duck-windows-x64.exe
+            fi
+            # Find JAR file as backup
+            jar=$(find . -name "*cli*.jar" -size +10M | head -1)
+            if [ -n "$jar" ]; then
+              cp "$jar" release-artifacts/duck-windows-x64.jar
+            fi
+          elif [[ "${{ runner.os }}" == "Linux" ]]; then
+            # Find duck executable or JAR
+            duck=$(find . -name "duck" -type f -executable | head -1)
+            if [ -n "$duck" ]; then
+              cp "$duck" release-artifacts/duck-linux-x64
+              chmod +x release-artifacts/duck-linux-x64
+            else
+              jar=$(find . -name "*cli*.jar" -size +10M | head -1)
+              if [ -n "$jar" ]; then
+                cp "$jar" release-artifacts/duck-linux-x64.jar
+              fi
+            fi
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            # Look for app bundle
+            bundle=$(find . -name "duck.bundle" -type d | head -1)
+            if [ -n "$bundle" ]; then
+              cd $(dirname "$bundle")
+              zip -r duck-macos.zip $(basename "$bundle")
+              mv duck-macos.zip $GITHUB_WORKSPACE/release-artifacts/
+              cd $GITHUB_WORKSPACE
+            fi
+            # Look for DMG
+            dmg=$(find . -name "*.dmg" | head -1)
+            if [ -n "$dmg" ]; then
+              cp "$dmg" release-artifacts/Cyberduck-macos.dmg
+            fi
+          fi
+          
+          ls -la release-artifacts/
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-artifacts
+          path: release-artifacts/*
+          if-no-files-found: warn
+          
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          
+      - name: Prepare release
+        run: |
+          mkdir -p release
+          cp ./artifacts/*/* ./release/ || true
+          ls -la ./release/
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Cyberduck ${{ github.event.inputs.tag_name || github.ref_name }}
+          body: |
+            # Cyberduck Release
+            
+            This is a simplified build focusing on CLI components.
+            
+            ## Windows
+            - `duck-windows-x64.exe` - Command line interface
+            - `duck-windows-x64.jar` - Java fallback
+            
+            ## Linux  
+            - `duck-linux-x64` - Command line interface
+            - `duck-linux-x64.jar` - Java application
+            
+            ## macOS
+            - `duck-macos.zip` - Command line bundle
+            - `Cyberduck-macos.dmg` - GUI application (if available)
+            
+            Java 11+ required for JAR files.
+          draft: false
+          prerelease: false
+          files: |
+            release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -64,19 +64,21 @@ jobs:
           
       - name: Build Core - Windows
         if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          REM Build core components first
-          call mvn clean package -B -DskipTests -DskipSign -DskipNotarize
-          
-      - name: Build Windows GUI and Installer
-        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Try to build Windows GUI
-          cd windows
-          mvn package -B -DskipTests -DskipSign || echo "Windows GUI build completed with warnings"
-          cd ..
+          # Set environment to prevent interactive prompts
+          $env:MAVEN_OPTS = "-Djansi.passthrough=true -Dmaven.logging.disable.ansiColor=true"
+          
+          # Build just the CLI components for Windows
+          mvn clean package -B -DskipTests -DskipSign -DskipNotarize -pl :cli-windows -am
+          
+      - name: Find Windows Artifacts After Build
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "=== Checking what was built ==="
+          find . -name "*.exe" -newer pom.xml | head -20
+          find . -name "*.msi" -newer pom.xml | head -20
           
       - name: Build and Package - macOS/Linux
         if: runner.os != 'Windows'
