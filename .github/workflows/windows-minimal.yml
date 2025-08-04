@@ -1,0 +1,164 @@
+name: Windows Minimal Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for release'
+        required: true
+        default: 'v0.0.1'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    timeout-minutes: 30
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+          
+      - name: Setup Build Environment
+        shell: cmd
+        run: |
+          REM Set non-interactive mode
+          set MAVEN_OPTS=-Dfile.encoding=UTF-8 -Djansi.force=true -Djansi.passthrough=true
+          set CI=true
+          echo CI=%CI%
+          
+      - name: Download Dependencies First
+        shell: cmd
+        timeout-minutes: 10
+        run: |
+          REM Download dependencies separately to avoid timeout during build
+          call mvn dependency:go-offline -B -DskipTests || exit /b 0
+          
+      - name: Build Core JAR Only
+        shell: cmd
+        timeout-minutes: 10
+        run: |
+          REM Build only the core module
+          cd core
+          call mvn clean compile -B -DskipTests -Dmaven.test.skip=true
+          call mvn jar:jar -B
+          cd ..
+          
+      - name: Build CLI JAR Only
+        shell: cmd
+        timeout-minutes: 10
+        run: |
+          REM Build CLI module
+          cd cli
+          call mvn clean compile -B -DskipTests -Dmaven.test.skip=true -Dmaven.javadoc.skip=true
+          call mvn jar:jar -B
+          cd ..
+          
+      - name: Create Windows Package
+        shell: pwsh
+        run: |
+          # Create distribution directory
+          New-Item -ItemType Directory -Force -Path ".\dist"
+          
+          # Copy JAR files
+          Get-ChildItem -Path "." -Include "*.jar" -File -Recurse | 
+            Where-Object { $_.FullName -notmatch "test" -and $_.Length -gt 1MB } |
+            ForEach-Object { Copy-Item $_.FullName -Destination ".\dist\" }
+          
+          # Create launcher batch file
+          @'
+@echo off
+setlocal
+set JAVA_OPTS=-Xmx512m
+set JAR_FILE=%~dp0cli-9.2.0-SNAPSHOT.jar
+
+if not exist "%JAR_FILE%" (
+    echo ERROR: CLI jar file not found
+    echo Looking for jar files in current directory:
+    dir *.jar
+    pause
+    exit /b 1
+)
+
+java %JAVA_OPTS% -jar "%JAR_FILE%" %*
+'@ | Out-File -FilePath ".\dist\duck.bat" -Encoding ASCII
+          
+          # Create README
+          @'
+# Cyberduck CLI for Windows (Java Version)
+
+## Requirements
+- Java 11 or later
+
+## Usage
+1. Open Command Prompt
+2. Navigate to this directory
+3. Run: duck.bat [arguments]
+
+Example:
+duck.bat --help
+duck.bat --list sftp://user@host/
+
+## Troubleshooting
+If you get "jar file not found", check that all JAR files are in the same directory as duck.bat
+'@ | Out-File -FilePath ".\dist\README.txt" -Encoding ASCII
+          
+          # List contents
+          Get-ChildItem ".\dist"
+          
+      - name: Create ZIP Archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ".\dist\*" -DestinationPath ".\duck-windows-minimal.zip"
+          
+          # Show file info
+          Get-Item ".\duck-windows-minimal.zip" | Select-Object Name, Length
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-minimal-build
+          path: duck-windows-minimal.zip
+          
+      - name: Create Release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Windows Minimal Build ${{ github.event.inputs.tag_name || github.ref_name }}
+          body: |
+            # Cyberduck Windows Build (Minimal)
+            
+            This is a minimal Java-based build of Cyberduck CLI for Windows.
+            
+            ## Installation
+            1. Download `duck-windows-minimal.zip`
+            2. Extract to a folder (e.g., `C:\cyberduck`)
+            3. Ensure Java 11+ is installed
+            4. Open Command Prompt and navigate to the folder
+            5. Run `duck.bat` commands
+            
+            ## Contents
+            - JAR files containing Cyberduck CLI
+            - `duck.bat` - Windows launcher script
+            - `README.txt` - Usage instructions
+            
+            ## Note
+            This is a fallback build due to Windows native build issues.
+            For full functionality, consider using the official Cyberduck releases.
+          draft: false
+          prerelease: false
+          files: |
+            duck-windows-minimal.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
