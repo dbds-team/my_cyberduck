@@ -195,11 +195,9 @@ jobs:
             if [ -n "$duck" ]; then
               echo "Found duck at: $duck (size: $(du -h "$duck" | cut -f1))"
               # Create a simple launcher script for GUI
-              cat > ./release-assets/Cyberduck-linux-x64.sh << 'EOF'
-#!/bin/bash
-# Cyberduck GUI launcher for Linux
-java -jar "$(dirname "$0")/Cyberduck-linux-x64.jar" "$@"
-EOF
+              echo '#!/bin/bash' > ./release-assets/Cyberduck-linux-x64.sh
+              echo '# Cyberduck GUI launcher for Linux' >> ./release-assets/Cyberduck-linux-x64.sh
+              echo 'java -jar "$(dirname "$0")/Cyberduck-linux-x64.jar" "$@"' >> ./release-assets/Cyberduck-linux-x64.sh
               chmod +x ./release-assets/Cyberduck-linux-x64.sh
             fi
             # Look for main JAR file
