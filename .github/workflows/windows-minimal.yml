@@ -76,42 +76,44 @@ jobs:
             ForEach-Object { Copy-Item $_.FullName -Destination ".\dist\" }
           
           # Create launcher batch file
-          @'
-@echo off
-setlocal
-set JAVA_OPTS=-Xmx512m
-set JAR_FILE=%~dp0cli-9.2.0-SNAPSHOT.jar
-
-if not exist "%JAR_FILE%" (
-    echo ERROR: CLI jar file not found
-    echo Looking for jar files in current directory:
-    dir *.jar
-    pause
-    exit /b 1
-)
-
-java %JAVA_OPTS% -jar "%JAR_FILE%" %*
-'@ | Out-File -FilePath ".\dist\duck.bat" -Encoding ASCII
+          $launcher = @"
+          @echo off
+          setlocal
+          set JAVA_OPTS=-Xmx512m
+          set JAR_FILE=%~dp0cli-9.2.0-SNAPSHOT.jar
+          
+          if not exist "%JAR_FILE%" (
+              echo ERROR: CLI jar file not found
+              echo Looking for jar files in current directory:
+              dir *.jar
+              pause
+              exit /b 1
+          )
+          
+          java %JAVA_OPTS% -jar "%JAR_FILE%" %*
+          "@
+          $launcher | Out-File -FilePath ".\dist\duck.bat" -Encoding ASCII
           
           # Create README
-          @'
-# Cyberduck CLI for Windows (Java Version)
-
-## Requirements
-- Java 11 or later
-
-## Usage
-1. Open Command Prompt
-2. Navigate to this directory
-3. Run: duck.bat [arguments]
-
-Example:
-duck.bat --help
-duck.bat --list sftp://user@host/
-
-## Troubleshooting
-If you get "jar file not found", check that all JAR files are in the same directory as duck.bat
-'@ | Out-File -FilePath ".\dist\README.txt" -Encoding ASCII
+          $readme = @"
+          # Cyberduck CLI for Windows (Java Version)
+          
+          ## Requirements
+          - Java 11 or later
+          
+          ## Usage
+          1. Open Command Prompt
+          2. Navigate to this directory
+          3. Run: duck.bat [arguments]
+          
+          Example:
+          duck.bat --help
+          duck.bat --list sftp://user@host/
+          
+          ## Troubleshooting
+          If you get "jar file not found", check that all JAR files are in the same directory as duck.bat
+          "@
+          $readme | Out-File -FilePath ".\dist\README.txt" -Encoding ASCII
           
           # List contents
           Get-ChildItem ".\dist"
